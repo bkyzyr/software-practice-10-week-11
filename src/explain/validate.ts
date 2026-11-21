@@ -1,115 +1,97 @@
-import type { ExplainInput, ReasonCode } from "./types";
+import { REASON_CODES, type ExplainInput, type ReasonCode } from './types';
 
-const REASON_CODES: readonly ReasonCode[] = [
-  "AVAILABLE",
-  "OVERLAP",
-  "ROOM_BLOCKED",
-  "INVALID_TIME",
-  "PAST_TIME",
-];
+export const MAX_LABEL_LENGTH = 60;
+export const MAX_NOTE_LENGTH = 200;
+export const MAX_EXPLANATION_LENGTH = 240;
 
-const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
-const TIME_TOKEN_PATTERN = /\b\d{1,2}:\d{2}\b/g;
-const MAX_ROOM_LABEL = 60;
-const MAX_NOTE = 200;
-const MAX_EXPLANATION = 240;
-const MAX_SENTENCES = 2;
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
-export type Validation = { valid: true } | { valid: false; errors: string[] };
+export type ValidationResult =
+  | { ok: true; value: ExplainInput }
+  | { ok: false; error: string };
 
-function matchesReason(isAvailable: boolean, reasonCode: ReasonCode): boolean {
-  return isAvailable ? reasonCode === "AVAILABLE" : reasonCode !== "AVAILABLE";
+function fail(error: string): ValidationResult {
+  return { ok: false, error };
 }
 
-export function validateExplainInput(input: unknown): Validation {
-  if (typeof input !== "object" || input === null) {
-    return { valid: false, errors: ["Input must be an object."] };
+export function validateExplainInput(raw: unknown): ValidationResult {
+  if (typeof raw !== 'object' || raw === null) {
+    return fail('Input must be an object.');
   }
-  const i = input as Partial<ExplainInput>;
-  const errors: string[] = [];
+  const r = raw as Record<string, unknown>;
 
-  if (typeof i.roomLabel !== "string" || i.roomLabel.trim().length === 0) {
-    errors.push("roomLabel must be a non-empty string.");
-  } else if (i.roomLabel.length > MAX_ROOM_LABEL) {
-    errors.push(`roomLabel must be at most ${MAX_ROOM_LABEL} characters.`);
-  }
-
-  for (const key of ["startTime", "endTime"] as const) {
-    const value = i[key];
-    if (typeof value !== "string" || !TIME_PATTERN.test(value)) {
-      errors.push(`${key} must be a time in HH:MM format.`);
-    }
+  const label = typeof r.roomLabel === 'string' ? r.roomLabel.trim() : '';
+  if (!label) return fail('Room label is required.');
+  if (label.length > MAX_LABEL_LENGTH) {
+    return fail(`Room label must be at most ${MAX_LABEL_LENGTH} characters.`);
   }
 
-  if (typeof i.isAvailable !== "boolean") {
-    errors.push("isAvailable must be a boolean.");
+  if (typeof r.startTime !== 'string' || !TIME_RE.test(r.startTime)) {
+    return fail('Start time must be in HH:MM format.');
   }
-
-  if (!i.reasonCode || !REASON_CODES.includes(i.reasonCode)) {
-    errors.push("reasonCode is unknown.");
-  } else if (
-    typeof i.isAvailable === "boolean" &&
-    !matchesReason(i.isAvailable, i.reasonCode)
+  if (typeof r.endTime !== 'string' || !TIME_RE.test(r.endTime)) {
+    return fail('End time must be in HH:MM format.');
+  }
+  if (typeof r.isAvailable !== 'boolean') {
+    return fail('isAvailable must be a boolean.');
+  }
+  if (
+    typeof r.reasonCode !== 'string' ||
+    !(REASON_CODES as readonly string[]).includes(r.reasonCode)
   ) {
-    errors.push("isAvailable does not match reasonCode.");
+    return fail('Unknown reason code.');
+  }
+  if (r.isAvailable !== (r.reasonCode === 'AVAILABLE')) {
+    return fail('isAvailable does not match the reason code.');
   }
 
-  if (i.userNote !== undefined) {
-    if (typeof i.userNote !== "string") {
-      errors.push("userNote must be a string.");
-    } else if (i.userNote.length > MAX_NOTE) {
-      errors.push(`userNote must be at most ${MAX_NOTE} characters.`);
+  let note: string | undefined;
+  if (r.userNote !== undefined) {
+    if (typeof r.userNote !== 'string') return fail('Note must be text.');
+    note = r.userNote.trim();
+    if (note.length > MAX_NOTE_LENGTH) {
+      return fail(`Note must be at most ${MAX_NOTE_LENGTH} characters.`);
     }
   }
 
-  return errors.length === 0 ? { valid: true } : { valid: false, errors };
+  return {
+    ok: true,
+    value: {
+      roomLabel: label,
+      startTime: r.startTime,
+      endTime: r.endTime,
+      isAvailable: r.isAvailable,
+      reasonCode: r.reasonCode as ReasonCode,
+      userNote: note,
+    },
+  };
 }
 
-function claimsAvailability(text: string): {
-  claimsAvailable: boolean;
-  claimsNotAvailable: boolean;
-} {
-  const t = ` ${text.toLowerCase().replace(/isn't|is not|aren't|are not/g, "isn't")} `;
-  const claimsNotAvailable =
-    /\bunavailable\b|\bisn't\s+available\b|\bcannot\s+be\s+booked\b/.test(t);
-  const claimsAvailable = /\bavailable\b/.test(t) && !claimsNotAvailable;
-  return { claimsAvailable, claimsNotAvailable };
-}
+const CONTRADICTS_UNAVAILABLE =
+  /\b(is|are) (now )?(available|free)\b|\bcan be booked\b|\byou can book\b/i;
+const CONTRADICTS_AVAILABLE =
+  /\bnot available\b|\bunavailable\b|\bblocked\b|\boverlap|\bcannot\b|\bcan't\b/i;
 
 export function validateExplanation(
-  explanation: unknown,
-  input: Pick<ExplainInput, "startTime" | "endTime" | "isAvailable">,
-): Validation {
-  if (typeof explanation !== "string" || explanation.trim().length === 0) {
-    return { valid: false, errors: ["Explanation must be a non-empty string."] };
+  text: unknown,
+  input: Pick<ExplainInput, 'startTime' | 'endTime' | 'isAvailable'>,
+): text is string {
+  if (typeof text !== 'string') return false;
+  const t = text.trim();
+  if (!t || t.length > MAX_EXPLANATION_LENGTH) return false;
+
+  const sentences = t.split(/[.!?]+(?:\s|$)/).filter((s) => s.trim().length > 0);
+  if (sentences.length > 2) return false;
+
+  const times = t.match(/\b\d{1,2}:\d{2}\b/g) ?? [];
+  if (times.some((x) => x !== input.startTime && x !== input.endTime)) {
+    return false;
   }
 
-  const errors: string[] = [];
-
-  if (explanation.length > MAX_EXPLANATION) {
-    errors.push(`Explanation must be at most ${MAX_EXPLANATION} characters.`);
+  if (input.isAvailable) {
+    if (CONTRADICTS_AVAILABLE.test(t)) return false;
+  } else if (CONTRADICTS_UNAVAILABLE.test(t)) {
+    return false;
   }
-
-  const sentences = explanation
-    .split(/[.!?]+/)
-    .filter((s) => s.trim().length > 0);
-  if (sentences.length > MAX_SENTENCES) {
-    errors.push(`Explanation must have at most ${MAX_SENTENCES} sentences.`);
-  }
-
-  const tokens = explanation.match(TIME_TOKEN_PATTERN) ?? [];
-  const allowed = new Set([input.startTime, input.endTime]);
-  if (tokens.some((t) => !allowed.has(t))) {
-    errors.push("Explanation may only mention the requested start and end times.");
-  }
-
-  const { claimsAvailable, claimsNotAvailable } = claimsAvailability(explanation);
-  if (input.isAvailable && claimsNotAvailable) {
-    errors.push("Explanation contradicts the confirmed available status.");
-  }
-  if (!input.isAvailable && claimsAvailable) {
-    errors.push("Explanation contradicts the confirmed unavailable status.");
-  }
-
-  return errors.length === 0 ? { valid: true } : { valid: false, errors };
+  return true;
 }
