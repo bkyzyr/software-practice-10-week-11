@@ -10,6 +10,8 @@ import {
   Users,
 } from "lucide-react";
 import { parseTimeLabel } from "@/availabilityAdapter";
+import { mapReason } from "@/explain/mapReason";
+import ExplainPanel from "@/components/ExplainPanel";
 import { ROOMS as ROOM_CATALOG, ALL_EQUIPMENT } from "@/rooms";
 import { filterRooms } from "@/roomFilters";
 import { checkRoomSlot } from "@/roomAvailability";
@@ -100,7 +102,10 @@ export default function App() {
 
   const [status, setStatus] = useState<Status>("idle");
   const [resultReason, setResultReason] = useState<string>("");
+  const [rawReason, setRawReason] = useState<string>("");
   const [resultRoomId, setResultRoomId] = useState<string | null>(null);
+  const [resultStartLabel, setResultStartLabel] = useState<string>("");
+  const [resultEndLabel, setResultEndLabel] = useState<string>("");
   const [fieldErrors, setFieldErrors] = useState<{
     start?: string;
     end?: string;
@@ -110,6 +115,11 @@ export default function App() {
   const visibleRooms = useMemo(
     () => filterRooms(ROOMS, { attendees, equipment }) as Room[],
     [attendees, equipment],
+  );
+
+  const roomNameById = useMemo(
+    () => new Map(ROOMS.map((r) => [r.id, r.name])),
+    [],
   );
 
   // The selected room is derived from the filtered list, so a room that no longer
@@ -133,6 +143,7 @@ export default function App() {
     setStatus("idle");
     setResultReason("");
     setResultRoomId(null);
+    setRawReason("");
   }
 
   function handleStartChange(value: string) {
@@ -191,13 +202,17 @@ export default function App() {
     });
 
     setResultRoomId(room.id);
+    setResultStartLabel(startLabel);
+    setResultEndLabel(endLabel);
     if (!result.available) {
       setStatus("unavailable");
+      setRawReason(result.reason);
       setResultReason(UNAVAILABLE_MESSAGES[result.reason]);
       return;
     }
 
     setStatus("available");
+    setRawReason(result.reason);
     setResultReason(
       `${room.name} is available for booking from ${minutesToLabel(
         start,
@@ -457,6 +472,14 @@ export default function App() {
                 </div>
               </div>
             </div>
+            <ExplainPanel
+              roomLabel={roomNameById.get(resultRoomId) ?? ""}
+              startTime={resultStartLabel}
+              endTime={resultEndLabel}
+              isAvailable={status === "available"}
+              reasonCode={mapReason(rawReason, status === "available")}
+              confirmedStatusText={resultReason}
+            />
           </section>
         )}
 
