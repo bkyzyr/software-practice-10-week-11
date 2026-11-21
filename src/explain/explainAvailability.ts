@@ -1,73 +1,70 @@
-import { validateExplainInput, validateExplanation } from "./validate";
-import type { ExplainAdapter, ExplainInput, ExplainPayload } from "./types";
+import { mockAdapter } from './mockAdapter';
+import type {
+  ExplainAdapter,
+  ExplainInput,
+  ExplainResult,
+  SafeExplainInput,
+} from './types';
+import { validateExplainInput, validateExplanation } from './validate';
 
-const TIMEOUT_MS = 3000;
-
-export const FALLBACK_EXPLANATION =
-  "The standard availability message is shown because the explanation service is unavailable.";
-
-export type ExplainResult =
-  | { explanation: string; usedFallback: false; adapterName: string }
-  | { explanation: string; usedFallback: true; adapterName: string };
+export const DEFAULT_TIMEOUT_MS = 3000;
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error(`Adapter timed out after ${ms} ms`)),
-      ms,
-    );
+    const timer = setTimeout(() => reject(new Error('timeout')), ms);
     promise.then(
       (value) => {
         clearTimeout(timer);
         resolve(value);
       },
-      (error) => {
+      (err) => {
         clearTimeout(timer);
-        reject(error);
+        reject(err);
       },
     );
   });
 }
 
-export async function explainAvailability(
-  input: ExplainInput,
-  adapter: ExplainAdapter,
-): Promise<ExplainResult> {
-  const checked = validateExplainInput(input);
-  if (!checked.valid) {
-    return {
-      explanation: FALLBACK_EXPLANATION,
-      usedFallback: true,
-      adapterName: adapter.name,
-    };
-  }
+export function fallbackText(i: Pick<ExplainInput, 'roomLabel' | 'startTime' | 'endTime' | 'isAvailable' | 'reasonCode'>): string {
+  const status = i.isAvailable ? 'Available' : 'Not available';
+  return `Status: ${status} (${i.reasonCode}) for ${i.roomLabel}, ${i.startTime} - ${i.endTime}. A detailed explanation is not available right now.`;
+}
 
-  // The note is for display only and is never sent to the adapter.
-  const { userNote: _userNote, ...payload } = input as ExplainInput & {
-    userNote?: string;
+export async function explainAvailability(
+  rawInput: unknown,
+  adapter: ExplainAdapter = mockAdapter,
+  timeoutMs: number = DEFAULT_TIMEOUT_MS,
+): Promise<ExplainResult> {
+  const checked = validateExplainInput(rawInput);
+  if (!checked.ok) return { ok: false, error: checked.error };
+
+  const v = checked.value;
+  // userNote is untrusted user text and is deliberately NOT sent to the adapter.
+  const safe: SafeExplainInput = {
+    roomLabel: v.roomLabel,
+    startTime: v.startTime,
+    endTime: v.endTime,
+    isAvailable: v.isAvailable,
+    reasonCode: v.reasonCode,
   };
-  const adapterInput: ExplainPayload = payload;
 
   try {
-    const response = await withTimeout(adapter.explain(adapterInput), TIMEOUT_MS);
-    const check = validateExplanation(response.explanation, input);
-    if (!check.valid) {
+    const out = await withTimeout(adapter.explain(safe), timeoutMs);
+    if (validateExplanation(out?.explanation, safe)) {
       return {
-        explanation: FALLBACK_EXPLANATION,
-        usedFallback: true,
-        adapterName: adapter.name,
+        ok: true,
+        explanation: out.explanation.trim(),
+        source: adapter.name,
+        usedFallback: false,
       };
     }
-    return {
-      explanation: response.explanation as string,
-      usedFallback: false,
-      adapterName: adapter.name,
-    };
   } catch {
-    return {
-      explanation: FALLBACK_EXPLANATION,
-      usedFallback: true,
-      adapterName: adapter.name,
-    };
+    // timeout, network error or adapter error: fall through to the fallback
   }
+  return {
+    ok: true,
+    explanation: fallbackText(safe),
+    source: 'fallback',
+    usedFallback: true,
+  };
 }
