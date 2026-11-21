@@ -473,12 +473,13 @@ export default function App() {
               </div>
             </div>
             <ExplainPanel
-              roomLabel={roomNameById.get(resultRoomId) ?? ""}
-              startTime={resultStartLabel}
-              endTime={resultEndLabel}
-              isAvailable={status === "available"}
-              reasonCode={mapReason(rawReason, status === "available")}
-              confirmedStatusText={resultReason}
+              input={{
+                roomLabel: roomNameById.get(resultRoomId) ?? "",
+                startTime: resultStartLabel,
+                endTime: resultEndLabel,
+                isAvailable: status === "available",
+                reasonCode: mapReason(rawReason, status === "available"),
+              }}
             />
           </section>
         )}

@@ -16,52 +16,52 @@ const baseInput = (overrides: Partial<ExplainInput> = {}): ExplainInput => ({
 
 describe("validateExplainInput", () => {
   it("accepts a valid input", () => {
-    expect(validateExplainInput(baseInput()).valid).toBe(true);
+    const r = validateExplainInput(baseInput());
+    expect(r.ok).toBe(true);
   });
 
   it("rejects empty input object", () => {
     const r = validateExplainInput({});
-    expect(r.valid).toBe(false);
-    expect((r as { errors: string[] }).errors.length).toBeGreaterThan(0);
+    expect(r.ok).toBe(false);
   });
 
   it("rejects non-string or empty roomLabel", () => {
-    expect(validateExplainInput(baseInput({ roomLabel: "" })).valid).toBe(false);
-    expect(validateExplainInput(baseInput({ roomLabel: 42 as unknown as string })).valid).toBe(false);
+    expect(validateExplainInput(baseInput({ roomLabel: "" })).ok).toBe(false);
+    expect(validateExplainInput(baseInput({ roomLabel: 42 as unknown as string })).ok).toBe(false);
   });
 
   it("rejects roomLabel longer than 60 chars", () => {
-    expect(validateExplainInput(baseInput({ roomLabel: "x".repeat(61) })).valid).toBe(false);
+    expect(validateExplainInput(baseInput({ roomLabel: "x".repeat(61) })).ok).toBe(false);
   });
 
   it("rejects times not in HH:MM format", () => {
-    expect(validateExplainInput(baseInput({ startTime: "25:00" })).valid).toBe(false);
-    expect(validateExplainInput(baseInput({ endTime: "10:0" })).valid).toBe(false);
+    expect(validateExplainInput(baseInput({ startTime: "25:00" })).ok).toBe(false);
+    expect(validateExplainInput(baseInput({ endTime: "10:0" })).ok).toBe(false);
   });
 
   it("rejects non-boolean isAvailable", () => {
     expect(
-      validateExplainInput(baseInput({ isAvailable: "yes" as unknown as boolean })).valid,
+      validateExplainInput(baseInput({ isAvailable: "yes" as unknown as boolean })).ok,
     ).toBe(false);
   });
 
   it("rejects unknown reasonCode", () => {
     expect(
-      validateExplainInput(baseInput({ reasonCode: "MAYBE" as ExplainInput["reasonCode"] })).valid,
+      validateExplainInput(baseInput({ reasonCode: "MAYBE" as ExplainInput["reasonCode"] })).ok,
     ).toBe(false);
   });
 
   it("rejects isAvailable that does not match reasonCode", () => {
     expect(
-      validateExplainInput(baseInput({ isAvailable: true, reasonCode: "OVERLAP" })).valid,
+      validateExplainInput(baseInput({ isAvailable: true, reasonCode: "OVERLAP" })).ok,
     ).toBe(false);
     expect(
-      validateExplainInput(baseInput({ isAvailable: false, reasonCode: "AVAILABLE" })).valid,
+      validateExplainInput(baseInput({ isAvailable: false, reasonCode: "AVAILABLE" })).ok,
     ).toBe(false);
   });
 
   it("rejects userNote longer than 200 chars", () => {
-    expect(validateExplainInput(baseInput({ userNote: "y".repeat(201) })).valid).toBe(false);
+    expect(validateExplainInput(baseInput({ userNote: "y".repeat(201) })).ok).toBe(false);
   });
 });
 
@@ -70,36 +70,36 @@ describe("validateExplanation", () => {
 
   it("accepts a matching explanation mentioning only the requested times", () => {
     expect(
-      validateExplanation("Room is available from 10:00 to 11:00.", status).valid,
+      validateExplanation("Room is available from 10:00 to 11:00.", status),
     ).toBe(true);
   });
 
   it("rejects empty explanations", () => {
-    expect(validateExplanation("", status).valid).toBe(false);
+    expect(validateExplanation("", status)).toBe(false);
   });
 
   it("rejects explanations over 240 chars", () => {
-    expect(validateExplanation("x".repeat(241), status).valid).toBe(false);
+    expect(validateExplanation("x".repeat(241), status)).toBe(false);
   });
 
   it("rejects more than two sentences", () => {
     expect(
-      validateExplanation("One. Two. Three.", status).valid,
+      validateExplanation("One. Two. Three.", status),
     ).toBe(false);
   });
 
   it("rejects times other than the requested ones", () => {
     expect(
-      validateExplanation("Room is available from 09:00 to 11:00.", status).valid,
+      validateExplanation("Room is available from 09:00 to 11:00.", status),
     ).toBe(false);
   });
 
   it("rejects an explanation contradicting the status", () => {
     expect(
-      validateExplanation("The room is unavailable at that time.", status).valid,
+      validateExplanation("The room is not available at that time.", status),
     ).toBe(false);
     expect(
-      validateExplanation("The room is available.", { ...status, isAvailable: false }).valid,
+      validateExplanation("The room is available.", { ...status, isAvailable: false }),
     ).toBe(false);
   });
 });
@@ -112,9 +112,12 @@ const adapter = (impl: ExplainAdapter["explain"]): ExplainAdapter => ({
 describe("explainAvailability", () => {
   it("returns the adapter explanation for an available slot", async () => {
     const r = await explainAvailability(baseInput(), mockAdapter);
-    expect(r.usedFallback).toBe(false);
-    expect(r.explanation).toContain("Room 101");
-    expect(r.explanation).toContain("10:00");
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.usedFallback).toBe(false);
+      expect(r.explanation).toContain("Room 101");
+      expect(r.explanation).toContain("10:00");
+    }
   });
 
   it("explains an overlap", async () => {
@@ -122,8 +125,11 @@ describe("explainAvailability", () => {
       baseInput({ isAvailable: false, reasonCode: "OVERLAP" }),
       mockAdapter,
     );
-    expect(r.usedFallback).toBe(false);
-    expect(r.explanation).toContain("overlapping");
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.usedFallback).toBe(false);
+      expect(r.explanation).toContain("overlap");
+    }
   });
 
   it("explains a blocked room", async () => {
@@ -131,8 +137,11 @@ describe("explainAvailability", () => {
       baseInput({ isAvailable: false, reasonCode: "ROOM_BLOCKED" }),
       mockAdapter,
     );
-    expect(r.usedFallback).toBe(false);
-    expect(r.explanation).toContain("blocked");
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.usedFallback).toBe(false);
+      expect(r.explanation).toContain("blocked");
+    }
   });
 
   it("explains an invalid time", async () => {
@@ -140,7 +149,8 @@ describe("explainAvailability", () => {
       baseInput({ isAvailable: false, reasonCode: "INVALID_TIME" }),
       mockAdapter,
     );
-    expect(r.usedFallback).toBe(false);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.usedFallback).toBe(false);
   });
 
   it("explains a past time", async () => {
@@ -148,16 +158,19 @@ describe("explainAvailability", () => {
       baseInput({ isAvailable: false, reasonCode: "PAST_TIME" }),
       mockAdapter,
     );
-    expect(r.usedFallback).toBe(false);
-    expect(r.explanation).toContain("past");
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.usedFallback).toBe(false);
+      expect(r.explanation).toContain("passed");
+    }
   });
 
-  it("uses the fallback for invalid input", async () => {
+  it("reports an error for invalid input", async () => {
     const r = await explainAvailability(
       baseInput({ startTime: "not-a-time" }),
       mockAdapter,
     );
-    expect(r.usedFallback).toBe(true);
+    expect(r.ok).toBe(false);
   });
 
   it("uses the fallback when the adapter times out", async () => {
@@ -172,21 +185,24 @@ describe("explainAvailability", () => {
     await vi.advanceTimersByTimeAsync(3_000);
     const r = await pending;
     vi.useRealTimers();
-    expect(r.usedFallback).toBe(true);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.usedFallback).toBe(true);
   });
 
   it("uses the fallback when the adapter throws", async () => {
     const failing = adapter(() => Promise.reject(new Error("boom")));
     const r = await explainAvailability(baseInput(), failing);
-    expect(r.usedFallback).toBe(true);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.usedFallback).toBe(true);
   });
 
   it("uses the fallback when the model output contradicts the status", async () => {
     const contradicting = adapter(() =>
-      Promise.resolve({ explanation: "The room is unavailable at that time." }),
+      Promise.resolve({ explanation: "The room is not available at that time." }),
     );
     const r = await explainAvailability(baseInput(), contradicting);
-    expect(r.usedFallback).toBe(true);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.usedFallback).toBe(true);
   });
 
   it("never passes the userNote to the adapter", async () => {

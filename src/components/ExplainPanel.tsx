@@ -23,6 +23,7 @@ export default function ExplainPanel({ input }: Props) {
   async function handleExplain() {
     const id = ++requestId.current;
     setLoading(true);
+    // The note is display-only; explainAvailability strips it before any adapter sees it.
     const r = await explainAvailability({ ...input, userNote: note || undefined });
     if (id !== requestId.current) return;
     setResult(r);
@@ -44,6 +45,7 @@ export default function ExplainPanel({ input }: Props) {
         Optional note (max 200 characters)
         <input
           className="mt-1 w-full rounded border border-slate-300 p-2"
+          maxLength={200}
           value={note}
           onChange={(e) => setNote(e.target.value)}
           placeholder="e.g. I need the room for a study group"
@@ -65,12 +67,20 @@ export default function ExplainPanel({ input }: Props) {
         </p>
       )}
 
+      {result && result.ok && result.usedFallback && (
+        <p
+          role="status"
+          className="rounded bg-amber-50 p-3 text-xs font-medium text-amber-700"
+        >
+          The standard message is shown (explanation service unavailable).
+        </p>
+      )}
+
       {result && result.ok && (
         <div className="rounded border border-dashed border-amber-400 bg-amber-50 p-3">
           <p className="text-xs font-semibold uppercase text-amber-700">
-            {result.usedFallback
-              ? 'Standard message (explanation service unavailable)'
-              : `Generated explanation (${result.source}, demo) - not a booking confirmation`}
+            Generated explanation ({result.source}, demo) - not a booking
+            confirmation
           </p>
           <p className="text-sm">{result.explanation}</p>
         </div>
