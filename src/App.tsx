@@ -15,6 +15,7 @@ import ExplainPanel from "@/components/ExplainPanel";
 import { ROOMS as ROOM_CATALOG, ALL_EQUIPMENT } from "@/rooms";
 import { filterRooms } from "@/roomFilters";
 import { checkRoomSlot } from "@/roomAvailability";
+import Practice12Checker from "@/practice12/Practice12Checker";
 
 type Booking = {
   id: string;
@@ -483,6 +484,11 @@ export default function App() {
             />
           </section>
         )}
+
+        {/* Practice 12 checker (below the existing content) */}
+        <div className="mt-5">
+          <Practice12Checker />
+        </div>
 
         {/* Footer hint */}
         <footer className="mt-8 flex flex-wrap items-start gap-2 text-xs text-slate-400">
